@@ -3,12 +3,16 @@ package ru.nordia.dsnitro;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpHost;
+import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
-import org.fusesource.jansi.Ansi;
+
+import static org.fusesource.jansi.Ansi.ansi;
+
 import org.fusesource.jansi.AnsiConsole;
+import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
@@ -17,9 +21,14 @@ import javax.swing.*;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
+import java.util.Scanner;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 public class Main {
     private static String dict = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -44,58 +53,44 @@ public class Main {
         System.setProperty("org.apache.commons.logging.simplelog.log.org.apache.http.headers", "ERROR");
     }
 
-    public static JSONObject sendRequest(String[] proxy, String code) throws IOException, ParseException {
-        CloseableHttpClient client = HttpClients.custom()
-                .setProxy(new HttpHost(proxy[0], Integer.parseInt(proxy[1])))
-                .build();
+    public static void main(String[] args) throws IOException, ParseException {
+        AnsiConsole.systemInstall();
 
-        CloseableHttpResponse response = client.execute(new HttpGet("https://discord.com/api/v6/entitlements/gift-codes/" + code + "?with_application=false&with_subscription_plan=true"));
+        System.out.print(ansi().bold().fgMagenta().a("\nИспользовать кастомные прокси? [Yes/No]: ").reset());
 
-        JSONObject object = (JSONObject) new JSONParser().parse(String.join("", IOUtils.readLines(response.getEntity().getContent())));
+        if (new Scanner(System.in).nextLine().equalsIgnoreCase("yes")) {
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setDialogTitle("Выбрать прокси");
 
-        client.close();
-        response.close();
+            File proxy = null;
 
-        return object;
-    }
+            if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                proxy = fileChooser.getSelectedFile();
+            } else {
+                System.exit(1);
+            }
 
-    private static String getCode() {
-        StringBuilder builder = new StringBuilder();
+            try {
+                proxies = FileUtils.readLines(proxy, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                System.exit(1);
+            }
 
-        for (int i = 0; i < 16; i++) {
-            builder.append(dict.charAt(ThreadLocalRandom.current().nextInt(dict.length())));
-        }
-
-        return builder.toString();
-    }
-
-    public static void main(String[] args) {
-        JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setDialogTitle("Выбрать прокси");
-
-        File proxy = null;
-
-        if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-            proxy = fileChooser.getSelectedFile();
+            if (proxies.isEmpty() || !proxies.stream().allMatch(p -> p.matches("([0-9]*(\\.)?)*:[0-9]*")))
+                System.exit(1);
         } else {
-            System.exit(1);
-        }
+            System.out.print(ansi().bold().fgMagenta().a("\n\nНачинаю загрузку прокси.. "));
 
-        try {
-            proxies = FileUtils.readLines(proxy, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            System.exit(1);
-        }
+            proxies = getProxies();
 
-        if (proxies.isEmpty() || !proxies.stream().allMatch(p -> p.matches("([0-9]*(\\.)?)*:[0-9]*"))) System.exit(1);
+            System.out.println(ansi().eraseScreen() + "\nЗагружено " + proxies.size() + " штук | Тип: HTTP/HTTPS | Timeout: | <5000\n\n");
+        }
 
         try {
             writer = new FileWriter(new File(System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "valid.txt"), true);
         } catch (IOException e) {
             System.exit(1);
         }
-
-        AnsiConsole.systemInstall();
 
         Executor executor = new ThreadPoolExecutor(1000, 1000, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(1000), new ThreadPoolExecutor.CallerRunsPolicy());
 
@@ -117,15 +112,54 @@ public class Main {
                     try {
                         writer.append(code).append("\n");
 
-                        System.out.println(Ansi.ansi().fgGreen().a(code));
+                        System.out.println(ansi().fgGreen().a(code));
 
                         writer.flush();
                     } catch (IOException ignored) {
                     }
                 } else {
-                    System.out.println(Ansi.ansi().fgRed().a(code));
+                    System.out.println(ansi().fgRed().a(code));
                 }
             });
         }
+    }
+
+    private static JSONObject sendRequest(String[] proxy, String code) throws IOException, ParseException {
+        CloseableHttpClient client = HttpClients.custom()
+                .setProxy(new HttpHost(proxy[0], Integer.parseInt(proxy[1])))
+                .build();
+
+        CloseableHttpResponse response = client.execute(new HttpGet("https://discord.com/api/v6/entitlements/gift-codes/" + code + "?with_application=false&with_subscription_plan=true"));
+
+        JSONObject object = (JSONObject) new JSONParser().parse(String.join("", IOUtils.readLines(response.getEntity().getContent())));
+
+        client.close();
+        response.close();
+
+        return object;
+    }
+
+    private static List<String> getProxies() throws IOException, ParseException {
+        HttpResponse response = HttpClients.createDefault().execute(new HttpGet("https://checkerproxy.net/api/archive/" + getDate()));
+
+        return (List<String>) ((JSONArray) new JSONParser().parse(new InputStreamReader(response.getEntity().getContent())))
+                .stream()
+                .filter(object -> (long) ((JSONObject) object).get("type") <= 2 && (long) ((JSONObject) object).get("timeout") <= 5000)
+                .map(object -> ((JSONObject) object).get("addr"))
+                .collect(Collectors.toList());
+    }
+
+    private static String getCode() {
+        StringBuilder builder = new StringBuilder();
+
+        for (int i = 0; i < 16; i++) {
+            builder.append(dict.charAt(ThreadLocalRandom.current().nextInt(dict.length())));
+        }
+
+        return builder.toString();
+    }
+
+    private static String getDate() {
+        return new SimpleDateFormat("yyyy-MM-dd").format(new Date());
     }
 }
