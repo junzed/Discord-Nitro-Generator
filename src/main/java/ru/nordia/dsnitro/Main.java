@@ -87,7 +87,7 @@ public class Main {
         }
 
         try {
-            writer = new FileWriter(new File(System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "valid.txt"), true);
+            writer = new FileWriter(new File(new File(Main.class.getProtectionDomain().getCodeSource().getLocation().toString()).getParent().replaceFirst(".{6}", "") + File.separator + "valid.txt"), true);
         } catch (IOException e) {
             System.exit(1);
         }
@@ -112,7 +112,7 @@ public class Main {
                     try {
                         writer.append(code).append("\n");
 
-                        System.out.println(ansi().fgGreen().a(code));
+                        System.out.println(ansi().fgGreen().a(code + " | " + message));
 
                         writer.flush();
                     } catch (IOException ignored) {
