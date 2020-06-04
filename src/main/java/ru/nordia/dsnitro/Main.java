@@ -1,5 +1,6 @@
 package ru.nordia.dsnitro;
 
+import com.sun.jna.platform.win32.Kernel32;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpHost;
@@ -32,17 +33,43 @@ import java.util.stream.Collectors;
 
 public class Main {
     private static String dict = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    private static long timeStarted = System.currentTimeMillis();
+
     private static List<String> proxies;
     private static FileWriter writer;
 
+    private static int checked = 0;
+    private static int invalid = 0;
+    private static int valid = 0;
+
     static {
-        Runtime.getRuntime().addShutdownHook(new Thread(AnsiConsole::systemUninstall));
+        Timer timer = new Timer(300, e -> {
+            long timePassed = System.currentTimeMillis() - timeStarted;
+            String uptime = "Uptime: ";
+
+            if (timePassed < TimeUnit.SECONDS.toMillis(60)) {
+                uptime += timePassed / TimeUnit.SECONDS.toMillis(1) + " seconds";
+            } else if (timePassed < TimeUnit.MINUTES.toMillis(60)) {
+                uptime += timePassed / TimeUnit.MINUTES.toMillis(1) + " minutes";
+            } else if (timePassed < TimeUnit.HOURS.toMillis(24)) {
+                uptime += timePassed / TimeUnit.HOURS.toMillis(1) + " hours";
+            } else {
+                uptime += timePassed / TimeUnit.DAYS.toMillis(1) + " days";
+            }
+
+            Kernel32.INSTANCE.SetConsoleTitle("DNG by Nordia#9573 | " + uptime + " | Checked: " + checked + " | Invalid: " + invalid + " | Valid: " + valid);
+        });
+        timer.setInitialDelay(0);
+        timer.setRepeats(true);
+        timer.start();
 
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (ClassNotFoundException | UnsupportedLookAndFeelException | IllegalAccessException | InstantiationException e) {
-            e.printStackTrace();
+            error(e);
         }
+
+        Runtime.getRuntime().addShutdownHook(new Thread(AnsiConsole::systemUninstall));
 
         java.util.logging.Logger.getLogger("org.apache.http.wire").setLevel(java.util.logging.Level.FINEST);
         java.util.logging.Logger.getLogger("org.apache.http.headers").setLevel(java.util.logging.Level.FINEST);
@@ -53,74 +80,76 @@ public class Main {
         System.setProperty("org.apache.commons.logging.simplelog.log.org.apache.http.headers", "ERROR");
     }
 
-    public static void main(String[] args) throws IOException, ParseException {
-        AnsiConsole.systemInstall();
+    public static void main(String[] args) {
+        try {
+            AnsiConsole.systemInstall();
 
-        System.out.print(ansi().bold().fgMagenta().a("\nИспользовать кастомные прокси? [Yes/No]: ").reset());
+            System.out.print(ansi().bold().fgMagenta().a("\nИспользовать кастомные прокси? [Yes/No]: ").reset());
 
-        if (new Scanner(System.in).nextLine().equalsIgnoreCase("yes")) {
-            JFileChooser fileChooser = new JFileChooser();
-            fileChooser.setDialogTitle("Выбрать прокси");
+            if (new Scanner(System.in).nextLine().equalsIgnoreCase("yes")) {
+                JFileChooser fileChooser = new JFileChooser();
+                fileChooser.setDialogTitle("Выбрать прокси");
 
-            File proxy = null;
+                File proxy = null;
 
-            if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                proxy = fileChooser.getSelectedFile();
-            } else {
-                System.exit(1);
-            }
+                if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                    proxy = fileChooser.getSelectedFile();
+                } else {
+                    System.exit(1);
+                }
 
-            try {
                 proxies = FileUtils.readLines(proxy, StandardCharsets.UTF_8);
-            } catch (IOException e) {
-                System.exit(1);
+            } else {
+                System.out.print(ansi().bold().fgMagenta().a("\n\nНачинаю загрузку прокси.. "));
+
+                proxies = getProxies();
             }
 
-            if (proxies.isEmpty() || !proxies.stream().allMatch(p -> p.matches("([0-9]*(\\.)?)*:[0-9]*")))
-                System.exit(1);
-        } else {
-            System.out.print(ansi().bold().fgMagenta().a("\n\nНачинаю загрузку прокси.. "));
+            if (proxies.isEmpty()) error("Недостаточно прокси.");
 
-            proxies = getProxies();
+            if (!proxies.stream().allMatch(p -> p.matches("([0-9]*(\\.)?)*:[0-9]*")))
+                error("Файл с прокси не является валидным.");
 
             System.out.println(ansi().eraseScreen() + "\nЗагружено " + proxies.size() + " штук | Тип: HTTP/HTTPS | Timeout: | <5000\n\n");
-        }
 
-        try {
             writer = new FileWriter(new File(new File(Main.class.getProtectionDomain().getCodeSource().getLocation().toString()).getParent().replaceFirst(".{6}", "") + File.separator + "valid.txt"), true);
-        } catch (IOException e) {
-            System.exit(1);
-        }
 
-        Executor executor = new ThreadPoolExecutor(1000, 1000, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(1000), new ThreadPoolExecutor.CallerRunsPolicy());
+            Executor executor = new ThreadPoolExecutor(1000, 1000, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(1000), new ThreadPoolExecutor.CallerRunsPolicy());
 
-        while (true) {
-            executor.execute(() -> {
-                String code = getCode();
+            while (true) {
+                executor.execute(() -> {
+                    String code = getCode();
 
-                JSONObject response;
+                    JSONObject response;
 
-                try {
-                    response = sendRequest(proxies.get(ThreadLocalRandom.current().nextInt(proxies.size())).split(":"), code);
-                } catch (IOException | ParseException e) {
-                    return;
-                }
-
-                String message = (String) response.get("message");
-
-                if (!message.equals("Unknown Gift Code") && !message.equals("service not exists") && !message.equals("You are being rate limited.")) {
                     try {
-                        writer.append(code).append("\n");
-
-                        System.out.println(ansi().fgGreen().a(code + " | " + message));
-
-                        writer.flush();
-                    } catch (IOException ignored) {
+                        response = sendRequest(proxies.get(ThreadLocalRandom.current().nextInt(proxies.size())).split(":"), code);
+                    } catch (IOException | ParseException e) {
+                        return;
                     }
-                } else {
-                    System.out.println(ansi().fgRed().a(code));
-                }
-            });
+
+                    String message = (String) response.get("message");
+
+                    checked++;
+
+                    if (!message.equals("Unknown Gift Code") && !message.equals("service not exists") && !message.equals("You are being rate limited.") && !message.startsWith("You are being blocked")) {
+                        try {
+                            writer.append(code).append(" | ").append(message).append("\n");
+
+                            System.out.println(ansi().fgGreen().a(code));
+                            valid++;
+
+                            writer.flush();
+                        } catch (IOException ignored) {
+                        }
+                    } else {
+                        System.out.println(ansi().fgRed().a(code));
+                        invalid++;
+                    }
+                });
+            }
+        } catch (Throwable e) {
+            error(e);
         }
     }
 
@@ -147,6 +176,25 @@ public class Main {
                 .filter(object -> (long) ((JSONObject) object).get("type") <= 2 && (long) ((JSONObject) object).get("timeout") <= 5000)
                 .map(object -> ((JSONObject) object).get("addr"))
                 .collect(Collectors.toList());
+    }
+
+    private static void error(String message) {
+        try {
+            System.out.println(ansi().bold().fgYellow().a("\n" + message));
+            Thread.sleep(Long.MAX_VALUE);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void error(Throwable throwable) {
+        try {
+            System.out.println(ansi().bold().fgYellow().a("\n"));
+            throwable.printStackTrace();
+            Thread.sleep(Long.MAX_VALUE);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 
     private static String getCode() {
