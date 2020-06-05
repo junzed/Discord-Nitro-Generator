@@ -102,15 +102,18 @@ public class Main {
             } else {
                 System.out.print(ansi().bold().fgMagenta().a("\n\nНачинаю загрузку прокси.. "));
 
-                proxies = getProxies();
+                proxies = getProxies(getDate(0));
+
+                if (proxies.isEmpty()) proxies = getProxies(getDate(1));
             }
 
             if (proxies.isEmpty()) error("Недостаточно прокси.");
 
-            if (!proxies.stream().allMatch(p -> p.matches("([0-9]*(\\.)?)*:[0-9]*")))
-                error("Файл с прокси не является валидным.");
+            if (!proxies.stream().allMatch(p -> p.matches("([0-9]*(\\.)?)*:[0-9]*"))) error("Файл с прокси не является валидным.");
 
-            System.out.println(ansi().eraseScreen() + "\nЗагружено " + proxies.size() + " штук | Тип: HTTP/HTTPS | Timeout: | <5000\n\n");
+            new ProcessBuilder("cmd", "/c", "cls").inheritIO().start().waitFor();
+
+            System.out.println("\nЗагружено " + proxies.size() + " штук | Тип: HTTP/HTTPS | Timeout: | <5000\n\n");
 
             writer = new FileWriter(new File(new File(Main.class.getProtectionDomain().getCodeSource().getLocation().toString()).getParent().replaceFirst(".{6}", "") + File.separator + "valid.txt"), true);
 
@@ -168,8 +171,8 @@ public class Main {
         return object;
     }
 
-    private static List<String> getProxies() throws IOException, ParseException {
-        HttpResponse response = HttpClients.createDefault().execute(new HttpGet("https://checkerproxy.net/api/archive/" + getDate()));
+    private static List<String> getProxies(String date) throws IOException, ParseException {
+        HttpResponse response = HttpClients.createDefault().execute(new HttpGet("https://checkerproxy.net/api/archive/" + date));
 
         return (List<String>) ((JSONArray) new JSONParser().parse(new InputStreamReader(response.getEntity().getContent())))
                 .stream()
@@ -180,7 +183,7 @@ public class Main {
 
     private static void error(String message) {
         try {
-            System.out.println(ansi().bold().fgYellow().a("\n" + message));
+            System.out.println(ansi().bold().fgYellow().a("\n\n" + message));
             Thread.sleep(Long.MAX_VALUE);
         } catch (InterruptedException e) {
             e.printStackTrace();
@@ -189,7 +192,7 @@ public class Main {
 
     private static void error(Throwable throwable) {
         try {
-            System.out.println(ansi().bold().fgYellow().a("\n"));
+            System.out.println(ansi().bold().fgYellow().a("\n\n"));
             throwable.printStackTrace();
             Thread.sleep(Long.MAX_VALUE);
         } catch (InterruptedException e) {
@@ -207,7 +210,7 @@ public class Main {
         return builder.toString();
     }
 
-    private static String getDate() {
-        return new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+    private static String getDate(int offset) {
+        return new SimpleDateFormat("yyyy-MM-dd").format(new Date(System.currentTimeMillis() - TimeUnit.DAYS.toMillis(offset)));
     }
 }
