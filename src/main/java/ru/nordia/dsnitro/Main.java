@@ -2,12 +2,11 @@ package ru.nordia.dsnitro;
 
 import com.sun.jna.platform.win32.Kernel32;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpHost;
 import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.client.methods.HttpPost;
 import org.apache.http.impl.client.HttpClients;
 
 import static org.fusesource.jansi.Ansi.ansi;
@@ -34,10 +33,13 @@ import java.util.stream.Collectors;
 public class Main {
     private static String dict = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static long timeStarted = System.currentTimeMillis();
+    private static Scanner scanner = new Scanner(System.in);
 
     private static List<String> proxies;
     private static FileWriter writer;
 
+    private static String username = "";
+    private static String token = "";
     private static int checked = 0;
     private static int invalid = 0;
     private static int valid = 0;
@@ -57,7 +59,7 @@ public class Main {
                 uptime += timePassed / TimeUnit.DAYS.toMillis(1) + " days";
             }
 
-            Kernel32.INSTANCE.SetConsoleTitle("DNG by Nordia#9573 | " + uptime + " | Checked: " + checked + " | Invalid: " + invalid + " | Valid: " + valid);
+            Kernel32.INSTANCE.SetConsoleTitle("DNG by Nordia#9573 " + (username.equals("") ? "" : "| Logged in as " + username + " ") + "| " + uptime + " | Checked: " + checked + " | Invalid: " + invalid + " | Valid: " + valid);
         });
         timer.setInitialDelay(0);
         timer.setRepeats(true);
@@ -70,6 +72,7 @@ public class Main {
         }
 
         Runtime.getRuntime().addShutdownHook(new Thread(AnsiConsole::systemUninstall));
+        AnsiConsole.systemInstall();
 
         java.util.logging.Logger.getLogger("org.apache.http.wire").setLevel(java.util.logging.Level.FINEST);
         java.util.logging.Logger.getLogger("org.apache.http.headers").setLevel(java.util.logging.Level.FINEST);
@@ -82,11 +85,19 @@ public class Main {
 
     public static void main(String[] args) {
         try {
-            AnsiConsole.systemInstall();
+            Scanner scanner = new Scanner(System.in);
 
-            System.out.print(ansi().bold().fgMagenta().a("\nИспользовать кастомные прокси? [Yes/No]: ").reset());
+            System.out.print(ansi().bold().fgMagenta().a("\n >> Использовать автоприменение валидных кодов? [Yes/No]: ").reset());
 
-            if (new Scanner(System.in).nextLine().equalsIgnoreCase("yes")) {
+            if (scanner.nextLine().equalsIgnoreCase("yes")) {
+                login();
+            } else {
+                clearConsole();
+            }
+
+            System.out.print(ansi().bold().fgMagenta().a("\n >> Использовать кастомные прокси? [Yes/No]: ").reset());
+
+            if (scanner.nextLine().equalsIgnoreCase("yes")) {
                 JFileChooser fileChooser = new JFileChooser();
                 fileChooser.setDialogTitle("Выбрать прокси");
 
@@ -100,20 +111,19 @@ public class Main {
 
                 proxies = FileUtils.readLines(proxy, StandardCharsets.UTF_8);
             } else {
-                System.out.print(ansi().bold().fgMagenta().a("\n\nНачинаю загрузку прокси.. "));
+                System.out.print(ansi().bold().fgMagenta().a("\n\n >> Начинаю загрузку прокси.. "));
 
                 proxies = getProxies(getDate(0));
 
                 if (proxies.isEmpty()) proxies = getProxies(getDate(1));
             }
 
-            if (proxies.isEmpty()) error("Недостаточно прокси.");
+            if (proxies.isEmpty()) error(" >> Недостаточно прокси.");
+            if (!proxies.stream().allMatch(p -> p.matches("([0-9]*(\\.)?)*:[0-9]*"))) error(" >> Файл с прокси не является валидным.");
 
-            if (!proxies.stream().allMatch(p -> p.matches("([0-9]*(\\.)?)*:[0-9]*"))) error("Файл с прокси не является валидным.");
+            clearConsole();
 
-            new ProcessBuilder("cmd", "/c", "cls").inheritIO().start().waitFor();
-
-            System.out.println("\nЗагружено " + proxies.size() + " штук | Тип: HTTP/HTTPS | Timeout: | <5000\n\n");
+            System.out.println("\n >> Загружено " + proxies.size() + " штук | Тип: HTTP/HTTPS | Timeout: | <5000\n\n");
 
             writer = new FileWriter(new File(new File(Main.class.getProtectionDomain().getCodeSource().getLocation().toString()).getParent().replaceFirst(".{6}", "") + File.separator + "valid.txt"), true);
 
@@ -156,19 +166,46 @@ public class Main {
         }
     }
 
+    private static void login() throws IOException, ParseException, InterruptedException {
+        clearConsole();
+
+        System.out.print(ansi().bold().fgMagenta().a("\n >> Введите токен: ").reset());
+
+        String tkn = scanner.nextLine();
+
+        HttpGet httpGet = new HttpGet("https://discord.com/api/v6/users/@me");
+        httpGet.addHeader("authorization", tkn);
+
+        JSONObject response = (JSONObject) new JSONParser().parse(new InputStreamReader(HttpClients.createMinimal().execute(httpGet).getEntity().getContent()));
+
+        Object name = response.get("username");
+
+        if (name == null) {
+            System.out.println(ansi().bold().fgMagenta().a("\n >> Токен не является валидным. Попробуйте ещё раз."));
+
+            Thread.sleep(2000);
+
+            login();
+        } else {
+            token = tkn;
+            username = name + "#" + response.get("discriminator");
+            clearConsole();
+        }
+    }
+
     private static JSONObject sendRequest(String[] proxy, String code) throws IOException, ParseException {
-        CloseableHttpClient client = HttpClients.custom()
+        HttpClient client = HttpClients.custom()
                 .setProxy(new HttpHost(proxy[0], Integer.parseInt(proxy[1])))
                 .build();
 
-        CloseableHttpResponse response = client.execute(new HttpGet("https://discord.com/api/v6/entitlements/gift-codes/" + code + "?with_application=false&with_subscription_plan=true"));
+        if (!token.equals("")) {
+            HttpPost httpPost = new HttpPost("https://discord.com/api/v6/entitlements/gift-codes/" + code + "/redeem");
+            httpPost.addHeader("authorization", token);
 
-        JSONObject object = (JSONObject) new JSONParser().parse(String.join("", IOUtils.readLines(response.getEntity().getContent())));
-
-        client.close();
-        response.close();
-
-        return object;
+            return (JSONObject) new JSONParser().parse(new InputStreamReader(client.execute(httpPost).getEntity().getContent()));
+        } else {
+            return (JSONObject) new JSONParser().parse(new InputStreamReader(client.execute(new HttpGet("https://discord.com/api/v6/entitlements/gift-codes/" + code + "?with_application=false&with_subscription_plan=true")).getEntity().getContent()));
+        }
     }
 
     private static List<String> getProxies(String date) throws IOException, ParseException {
@@ -208,6 +245,10 @@ public class Main {
         }
 
         return builder.toString();
+    }
+
+    private static void clearConsole() throws IOException, InterruptedException {
+        new ProcessBuilder("cmd", "/c", "cls").inheritIO().start().waitFor();
     }
 
     private static String getDate(int offset) {
