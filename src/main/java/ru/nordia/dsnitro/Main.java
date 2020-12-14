@@ -87,7 +87,7 @@ public class Main {
         try {
             Scanner scanner = new Scanner(System.in);
 
-            System.out.print(ansi().bold().fgMagenta().a("\n >> Использовать автоприменение валидных кодов? [Yes/No]: ").reset());
+            System.out.print(ansi().bold().fgMagenta().a("\n >> Use auto-enrollment of valid codes? [Yes/No]: ").reset());
 
             if (scanner.nextLine().equalsIgnoreCase("yes")) {
                 login();
@@ -95,11 +95,11 @@ public class Main {
                 clearConsole();
             }
 
-            System.out.print(ansi().bold().fgMagenta().a("\n >> Использовать кастомные прокси? [Yes/No]: ").reset());
+            System.out.print(ansi().bold().fgMagenta().a("\n >> Use custom proxies? [Yes/No]: ").reset());
 
             if (scanner.nextLine().equalsIgnoreCase("yes")) {
                 JFileChooser fileChooser = new JFileChooser();
-                fileChooser.setDialogTitle("Выбрать прокси");
+                fileChooser.setDialogTitle("Select proxy");
 
                 File proxy = null;
 
@@ -111,19 +111,19 @@ public class Main {
 
                 proxies = FileUtils.readLines(proxy, StandardCharsets.UTF_8);
             } else {
-                System.out.print(ansi().bold().fgMagenta().a("\n\n >> Начинаю загрузку прокси.. "));
+                System.out.print(ansi().bold().fgMagenta().a("\n\n >> I'm starting to download the proxy.. "));
 
                 proxies = getProxies(getDate(0));
 
                 if (proxies.isEmpty()) proxies = getProxies(getDate(1));
             }
 
-            if (proxies.isEmpty()) error(" >> Недостаточно прокси.");
-            if (!proxies.stream().allMatch(p -> p.matches("([0-9]*(\\.)?)*:[0-9]*"))) error(" >> Файл с прокси не является валидным.");
+            if (proxies.isEmpty()) error(" >> Not enough proxy.");
+            if (!proxies.stream().allMatch(p -> p.matches("([0-9]*(\\.)?)*:[0-9]*"))) error(" >> The proxy file is not valid.");
 
             clearConsole();
 
-            System.out.println("\n >> Загружено " + proxies.size() + " штук | Тип: HTTP/HTTPS | Timeout: | <5000\n\n");
+            System.out.println("\n >> Uploaded " + proxies.size() + " pieces | A type: HTTP/HTTPS | Timeout: | <5000\n\n");
 
             writer = new FileWriter(new File(new File(Main.class.getProtectionDomain().getCodeSource().getLocation().toString()).getParent().replaceFirst(".{6}", "") + File.separator + "valid.txt"), true);
 
@@ -169,7 +169,7 @@ public class Main {
     private static void login() throws IOException, ParseException, InterruptedException {
         clearConsole();
 
-        System.out.print(ansi().bold().fgMagenta().a("\n >> Введите токен: ").reset());
+        System.out.print(ansi().bold().fgMagenta().a("\n >> Enter the token: ").reset());
 
         String tkn = scanner.nextLine();
 
@@ -181,7 +181,7 @@ public class Main {
         Object name = response.get("username");
 
         if (name == null) {
-            System.out.println(ansi().bold().fgMagenta().a("\n >> Токен не является валидным. Попробуйте ещё раз."));
+            System.out.println(ansi().bold().fgMagenta().a("\n >> The token is not valid. Try again."));
 
             Thread.sleep(2000);
 
